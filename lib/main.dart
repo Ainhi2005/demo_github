@@ -1,655 +1,395 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'room_model.dart';
+import 'api_service.dart';
 
 void main() {
-  runApp(const TravelerApp());
+  runApp(const MyApp());
 }
 
-class TravelerApp extends StatelessWidget {
-  const TravelerApp({Key? key}) : super(key: key);
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: const TravelerHomePage(),
+      title: 'App Tìm Trọ Test',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: const RoomListScreen(),
     );
   }
 }
 
-class TravelerHomePage extends StatefulWidget {
-  const TravelerHomePage({Key? key}) : super(key: key);
+class RoomListScreen extends StatefulWidget {
+  const RoomListScreen({super.key});
 
   @override
-  State<TravelerHomePage> createState() => _TravelerHomePageState();
+  State<RoomListScreen> createState() => _RoomListScreenState();
 }
 
-class _TravelerHomePageState extends State<TravelerHomePage> {
-  int _selectedIndex = 0;
-  int _selectedMainTab = 0; // 0: Hotels, 1: Cruises
-  int _selectedServiceTab = -1; // -1: none, 0: Cars, 1: Flights
-  bool _isSearching = false;
-  final TextEditingController _searchController = TextEditingController();
+class _RoomListScreenState extends State<RoomListScreen> {
+  final ApiService _apiService = ApiService(Dio());
+  late Future<List<RoomModel>> _roomsFuture;
+
+  // Biến để theo dõi trạng thái
+  int _loadCount = 0;
+  DateTime? _lastLoadTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _debugPrint('🔄 INIT STATE: Bắt đầu khởi tạo');
+    _roomsFuture = _loadRoomsWithDebug();
+  }
+
+  // Hàm reload dữ liệu với debug
+  void _refreshData() {
+    _debugPrint('🔄 REFRESH: Người dùng yêu cầu làm mới dữ liệu');
+    setState(() {
+      _roomsFuture = _loadRoomsWithDebug();
+    });
+  }
+
+  // Hàm tải dữ liệu với debug chi tiết
+  Future<List<RoomModel>> _loadRoomsWithDebug() async {
+    _loadCount++;
+    final startTime = DateTime.now();
+    _debugPrint('🚀 LOAD #$_loadCount: Bắt đầu tải dữ liệu - ${startTime.toIso8601String()}');
+
+    if (_lastLoadTime != null) {
+      final timeSinceLastLoad = startTime.difference(_lastLoadTime!);
+      _debugPrint('⏰ Thời gian từ lần tải trước: ${timeSinceLastLoad.inSeconds} giây');
+    }
+
+    try {
+      final rooms = await _apiService.getRooms();
+      final endTime = DateTime.now();
+      final loadDuration = endTime.difference(startTime);
+
+      _debugPrint('✅ LOAD #$_loadCount THÀNH CÔNG:');
+      _debugPrint('   • Thời gian tải: ${loadDuration.inMilliseconds}ms');
+      _debugPrint('   • Số lượng phòng: ${rooms.length}');
+      _debugPrint('   • Thời gian kết thúc: ${endTime.toIso8601String()}');
+
+      // Debug chi tiết từng phòng
+      _debugPrint('📊 CHI TIẾT PHÒNG:');
+      for (var i = 0; i < rooms.length; i++) {
+        final room = rooms[i];
+        _debugPrint('   ${i + 1}. ${room.title}');
+        _debugPrint('      ID: ${room.id}');
+        _debugPrint('      Địa chỉ: ${room.address}');
+        _debugPrint('      Giá: ${room.price} VNĐ');
+        _debugPrint('      Ảnh: ${room.imageUrl}');
+        _debugPrint('      ---');
+      }
+
+      _lastLoadTime = endTime;
+      return rooms;
+
+    } catch (error, stackTrace) {
+      final endTime = DateTime.now();
+      final loadDuration = endTime.difference(startTime);
+
+      _debugPrint('❌ LOAD #$_loadCount THẤT BẠI:');
+      _debugPrint('   • Lỗi: $error');
+      _debugPrint('   • Thời gian trước khi lỗi: ${loadDuration.inMilliseconds}ms');
+      _debugPrint('   • StackTrace: $stackTrace');
+
+      // Re-throw để FutureBuilder có thể xử lý
+      rethrow;
+    }
+  }
+
+  // Hàm in debug với format đẹp
+  void _debugPrint(String message) {
+    final timestamp = DateTime.now().toIso8601String();
+    print('[$timestamp] $message');
+  }
 
   @override
   Widget build(BuildContext context) {
+    _debugPrint('🎨 BUILD: Widget được build lại');
+
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header với background xanh
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF0052CC), Color(0xFF0066FF)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                children: [
-                  // Top navigation bar
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        InkWell(
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Back button pressed'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          },
-                          child: const Icon(Icons.arrow_back, color: Colors.white),
-                        ),
-                        Row(
-                          children: [
-                            InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _isSearching = !_isSearching;
-                                });
-                              },
-                              child: const Icon(Icons.search, color: Colors.white),
-                            ),
-                            const SizedBox(width: 16),
-                            InkWell(
-                              onTap: () {
-                                _showMenuDialog(context);
-                              },
-                              child: const Icon(Icons.menu, color: Colors.white),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Search bar (hiển thị khi nhấn search)
-                  if (_isSearching)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          autofocus: true,
-                          decoration: InputDecoration(
-                            hintText: 'Search destinations...',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {
-                                  _isSearching = false;
-                                });
-                              },
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.all(16),
-                          ),
-                        ),
-                      ),
-                    ),
-                  // Logo
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 20.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(
-                          Icons.favorite,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Traveler',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Tab buttons
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildTabButton(
-                            'Hotels',
-                            Icons.hotel,
-                            _selectedMainTab == 0,
-                                () {
-                              setState(() {
-                                _selectedMainTab = 0;
-                              });
-                            },
-                          ),
-                        ),
-                        Expanded(
-                          child: _buildTabButton(
-                            'Cruises',
-                            Icons.directions_boat,
-                            _selectedMainTab == 1,
-                                () {
-                              setState(() {
-                                _selectedMainTab = 1;
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Service buttons
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildServiceButton(
-                            'Cars',
-                            Icons.directions_car,
-                            _selectedServiceTab == 0,
-                                () {
-                              setState(() {
-                                _selectedServiceTab = _selectedServiceTab == 0 ? -1 : 0;
-                              });
-                            },
-                          ),
-                        ),
-                        Expanded(
-                          child: _buildServiceButton(
-                            'Flights',
-                            Icons.flight,
-                            _selectedServiceTab == 1,
-                                () {
-                              setState(() {
-                                _selectedServiceTab = _selectedServiceTab == 1 ? -1 : 1;
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
+      appBar: AppBar(
+        title: const Text('Danh sách phòng trọ'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+          ),
+          // Thêm badge hiển thị số lần load
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: const BoxDecoration(
+              color: Colors.red,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$_loadCount',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            // Content area
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 24),
-                    // Membership section
-                    const Text(
-                      'Become a member!',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () {
-                        _showAuthDialog(context);
-                      },
-                      child: const Text(
-                        'Sign in or create an account',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.blue,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    // Travel card
-                    GestureDetector(
-                      onTap: () {
-                        _showTravelDetails(context);
-                      },
-                      child: Hero(
-                        tag: 'travel_card',
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          height: 200,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 10,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
-                            image: const DecorationImage(
-                              image: NetworkImage(
-                                'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800',
-                              ),
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.black.withOpacity(0.5),
-                                  Colors.transparent,
-                                ],
-                                begin: Alignment.bottomCenter,
-                                end: Alignment.topCenter,
-                              ),
-                            ),
-                            alignment: Alignment.bottomLeft,
-                            padding: const EdgeInsets.all(20),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: const [
-                                Text(
-                                  'Travel the world',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Icon(
-                                  Icons.arrow_forward_ios,
-                                  color: Colors.white,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    // Popular destinations
-                    _buildPopularDestinations(),
-                    const SizedBox(height: 80),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-          _showBottomNavMessage(index);
+      body: FutureBuilder<List<RoomModel>>(
+        future: _roomsFuture,
+        builder: (context, snapshot) {
+          _debugPrint('📱 FUTUREBUILDER:');
+          _debugPrint('   • ConnectionState: ${snapshot.connectionState}');
+          _debugPrint('   • HasData: ${snapshot.hasData}');
+          _debugPrint('   • HasError: ${snapshot.hasError}');
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            _debugPrint('   ⏳ Trạng thái: ĐANG TẢI...');
+            return _buildLoadingWidget();
+          } else if (snapshot.hasError) {
+            _debugPrint('   💥 Trạng thái: LỖI - ${snapshot.error}');
+            return _buildErrorWidget(snapshot.error.toString());
+          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+            _debugPrint('   ℹ️ Trạng thái: KHÔNG CÓ DỮ LIỆU');
+            return _buildEmptyWidget();
+          }
+
+          _debugPrint('   ✅ Trạng thái: DỮ LIỆU THÀNH CÔNG');
+          return _buildRoomList(snapshot.data!);
         },
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFF0052CC),
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.check_circle_outline),
-            activeIcon: Icon(Icons.check_circle),
-            label: 'Shortlist',
+      ),
+      // Thêm floating action button để debug
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          _showDebugInfo(context);
+        },
+        child: const Icon(Icons.bug_report),
+        tooltip: 'Thông tin Debug',
+      ),
+    );
+  }
+
+  Widget _buildLoadingWidget() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text('Đang tải dữ liệu...'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget(String error) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 64),
+          const SizedBox(height: 16),
+          const Text(
+            'Lỗi tải dữ liệu',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.work_outline),
-            activeIcon: Icon(Icons.work),
-            label: 'Trips',
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32.0),
+            child: Text(
+              error,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Account',
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _refreshData,
+            child: const Text('Thử lại'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTabButton(String text, IconData icon, bool isSelected, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF0052CC) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? Colors.white : Colors.grey,
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              text,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildServiceButton(String text, IconData icon, bool isSelected, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.grey[200] : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? const Color(0xFF0052CC) : Colors.grey[700],
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              text,
-              style: TextStyle(
-                color: isSelected ? const Color(0xFF0052CC) : Colors.grey[700],
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPopularDestinations() {
-    final destinations = [
-      {'name': 'Paris', 'image': 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400'},
-      {'name': 'Tokyo', 'image': 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400'},
-      {'name': 'New York', 'image': 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=400'},
-      {'name': 'London', 'image': 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=400'},
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16.0),
-          child: Text(
-            'Popular Destinations',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
+  Widget _buildEmptyWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.search_off, size: 64, color: Colors.grey),
+          const SizedBox(height: 16),
+          const Text(
+            'Không có phòng trọ nào',
+            style: TextStyle(fontSize: 18),
           ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 150,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: destinations.length,
-            itemBuilder: (context, index) {
-              return GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Selected ${destinations[index]['name']}'),
-                      duration: const Duration(seconds: 1),
-                    ),
-                  );
-                },
-                child: Container(
-                  width: 120,
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    image: DecorationImage(
-                      image: NetworkImage(destinations[index]['image']!),
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withOpacity(0.5),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                      ),
-                    ),
-                    alignment: Alignment.bottomCenter,
-                    padding: const EdgeInsets.all(8),
-                    child: Text(
-                      destinations[index]['name']!,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              );
+          const SizedBox(height: 8),
+          ElevatedButton(
+            onPressed: _refreshData,
+            child: const Text('Tải lại'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoomList(List<RoomModel> rooms) {
+    return ListView.builder(
+      itemCount: rooms.length,
+      itemBuilder: (context, index) {
+        final room = rooms[index];
+
+        return Card(
+          margin: const EdgeInsets.all(8),
+          child: ListTile(
+            leading: _buildImageWidget(room),
+            title: Text(room.title),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(room.address),
+                Text('Giá: ${room.price} VNĐ',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              _showRoomDetail(context, room);
             },
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
-  void _showMenuDialog(BuildContext context) {
+  Widget _buildImageWidget(RoomModel room) {
+    _debugPrint('🖼️ BUILD IMAGE: ${room.title} - URL: ${room.imageUrl}');
+
+    return SizedBox(
+      width: 80,
+      height: 80,
+      child: room.imageUrl.isNotEmpty
+          ? ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          room.imageUrl,
+          width: 80,
+          height: 80,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) {
+              _debugPrint('✅ IMAGE LOADED: ${room.title}');
+              return child;
+            }
+            _debugPrint('📥 IMAGE LOADING: ${room.title} - ${loadingProgress.cumulativeBytesLoaded}/${loadingProgress.expectedTotalBytes}');
+            return Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                    loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            _debugPrint('❌ IMAGE ERROR: ${room.title} - $error');
+            _debugPrint('   URL: ${room.imageUrl}');
+            return _buildPlaceholder();
+          },
+        ),
+      )
+          : _buildPlaceholder(),
+    );
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Icon(Icons.home, color: Colors.grey, size: 40),
+    );
+  }
+
+  void _showRoomDetail(BuildContext context, RoomModel room) {
+    _debugPrint('👆 TAP ROOM: ${room.title} (ID: ${room.id})');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Menu'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.help),
-              title: const Text('Help'),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.info),
-              title: const Text('About'),
-              onTap: () => Navigator.pop(context),
-            ),
-          ],
+        title: Text(room.title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('ID: ${room.id}'),
+              Text('Địa chỉ: ${room.address}'),
+              Text('Giá: ${room.price} VNĐ'),
+              const SizedBox(height: 16),
+              const Text('URL ảnh:', style: TextStyle(fontWeight: FontWeight.bold)),
+              SelectableText(room.imageUrl),
+              const SizedBox(height: 16),
+              room.imageUrl.isNotEmpty
+                  ? Image.network(room.imageUrl)
+                  : const Text('Không có ảnh'),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Đóng'),
+          ),
+        ],
       ),
     );
   }
 
-  void _showAuthDialog(BuildContext context) {
+  void _showDebugInfo(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sign in'),
+        title: const Row(
+          children: [
+            Icon(Icons.bug_report),
+            SizedBox(width: 8),
+            Text('Thông tin Debug'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
-            ),
+            Text('• Số lần tải: $_loadCount'),
+            Text('• Lần tải cuối: ${_lastLoadTime?.toIso8601String() ?? "Chưa có"}'),
             const SizedBox(height: 16),
-            TextField(
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                border: OutlineInputBorder(),
-              ),
+            const Text(
+              'Xem console để biết chi tiết debug',
+              style: TextStyle(fontStyle: FontStyle.italic),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const Text('Đóng'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () {
+              _refreshData();
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Sign in successful!')),
-              );
             },
-            child: const Text('Sign in'),
+            child: const Text('Tải lại'),
           ),
         ],
       ),
     );
-  }
-
-  void _showTravelDetails(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Travel the World',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Discover amazing destinations and create unforgettable memories. Book your next adventure with exclusive deals and personalized recommendations.',
-              style: TextStyle(fontSize: 16, color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0052CC),
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: const Text('Book Now', style: TextStyle(fontSize: 18)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showBottomNavMessage(int index) {
-    String message = '';
-    switch (index) {
-      case 0:
-        message = 'Shortlist - Your saved places';
-        break;
-      case 1:
-        message = 'Trips - Your upcoming trips';
-        break;
-      case 2:
-        message = 'Account - Manage your profile';
-        break;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 }
